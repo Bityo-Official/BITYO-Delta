@@ -52,10 +52,22 @@ const config: Config = {
 					from: { transform: "translateY(24px)", opacity: "0" },
 					to: { transform: "translateY(0)", opacity: "1" },
 				},
+				slideInLeft: {
+					from: { transform: "translateX(-100%)" },
+					to: { transform: "translateX(0)" },
+				},
+				slideOutLeft: {
+					from: { transform: "translateX(0)" },
+					to: { transform: "translateX(-100%)" },
+				},
+				fadeOut: { from: { opacity: "1" }, to: { opacity: "0" } },
 			},
 			animation: {
 				fadeIn: "fadeIn .18s ease",
+				fadeOut: "fadeOut .2s ease forwards",
 				sheetUp: "sheetUp .24s cubic-bezier(.2,.8,.2,1)",
+				slideInLeft: "slideInLeft .22s cubic-bezier(.2,.8,.2,1)",
+				slideOutLeft: "slideOutLeft .2s cubic-bezier(.4,0,1,1) forwards",
 			},
 		},
 	},

@@ -43,18 +43,50 @@ function useNarrow() {
 	return narrow;
 }
 
+// Tooltip shown to the right of a collapsed-sidebar item on hover (Supabase/Claude style).
+// Theme-inverted (bg-ink/text-app) so it reads in both light and dark.
+function SideTip({ label }: { label: string }) {
+	return (
+		<span className="pointer-events-none absolute left-full top-1/2 z-[60] ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-ink px-2 py-1 font-sans text-[11px] font-medium text-app opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+			{label}
+		</span>
+	);
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
 	const router = useRouter();
 	const pathname = usePathname();
 	const { snapshot, user, dark, setDark } = useData();
 	const [selected, setSelected] = React.useState<NormPosition | null>(null);
 	const [drawer, setDrawer] = React.useState(false);
+	// `drawerClosing` keeps the drawer mounted while its slide-out animation plays
+	const [drawerClosing, setDrawerClosing] = React.useState(false);
 	const narrow = useNarrow();
 
-	// close the mobile drawer on route change (pathname is the trigger)
+	const closeDrawer = React.useCallback(() => {
+		setDrawerClosing(true);
+		window.setTimeout(() => {
+			setDrawer(false);
+			setDrawerClosing(false);
+		}, 200); // matches slideOutLeft duration
+	}, []);
+
+	// desktop collapse-to-icons (persisted). Mobile uses the drawer and ignores this.
+	const [collapsed, setCollapsed] = React.useState(false);
 	React.useEffect(() => {
-		void pathname;
-		setDrawer(false);
+		setCollapsed(localStorage.getItem("hb_sidebar_collapsed") === "1");
+	}, []);
+	const toggleCollapsed = () =>
+		setCollapsed((v) => {
+			const nv = !v;
+			localStorage.setItem("hb_sidebar_collapsed", nv ? "1" : "0");
+			return nv;
+		});
+
+	// animate the mobile drawer shut on route change (pathname is the trigger)
+	// biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the intended trigger
+	React.useEffect(() => {
+		closeDrawer();
 	}, [pathname]);
 
 	// view-model (totals / hedges / exposure / account labels) computed once per snapshot
@@ -107,12 +139,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 			? pathname === "/dashboard"
 			: pathname.startsWith(href);
 
-	const sidebar = (
-		<div className="flex h-full w-52 shrink-0 flex-col border-r border-line bg-app px-3 pb-3.5 pt-[18px]">
+	const renderSidebar = (col: boolean, isDrawer: boolean) => (
+		<div
+			className={cn(
+				"flex h-full shrink-0 flex-col border-r border-line bg-app pb-3.5 pt-[18px] transition-[width] duration-200 ease-in-out",
+				col ? "w-[60px] px-2" : "w-52 px-3",
+			)}
+		>
 			{/* wordmark */}
 			<Link
 				href="/dashboard"
-				className="flex items-center gap-2 px-2 pb-[18px] pt-0.5 no-underline"
+				className={cn(
+					"flex items-center gap-2 pb-[18px] pt-0.5 no-underline",
+					col ? "justify-center px-0" : "px-2",
+				)}
 			>
 				{/* real site icon (app/icon.png — served by Next at /icon.png) */}
 				{/* eslint-disable-next-line @next/next/no-img-element */}
@@ -121,11 +161,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 					alt="Bityo Delta"
 					width={24}
 					height={24}
-					className="h-6 w-6 rounded-md object-contain"
+					className="h-6 w-6 shrink-0 rounded-md object-contain"
 				/>
-				<div className="font-sans text-[13.5px] font-semibold tracking-tight text-ink">
-					Bityo Delta
-				</div>
+				{!col && (
+					<div className="animate-fadeIn whitespace-nowrap font-sans text-[13.5px] font-semibold tracking-tight text-ink">
+						Bityo Delta
+					</div>
+				)}
 			</Link>
 
 			{/* nav */}
@@ -137,7 +179,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 							key={n.href}
 							href={n.href}
 							className={cn(
-								"flex items-center gap-2.5 rounded-[7px] px-2 py-[7px] font-sans text-[13px] no-underline transition-colors",
+								"group relative flex items-center rounded-[7px] py-[7px] font-sans text-[13px] no-underline transition-colors",
+								col ? "justify-center px-0" : "gap-2.5 px-2",
 								active
 									? "bg-ink/5 font-semibold text-ink dark:bg-white/[.06]"
 									: "font-medium text-sec hover:text-ink",
@@ -146,9 +189,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 							<TabIcon
 								name={n.icon}
 								size={16}
-								className={active ? "text-ink" : "text-ter"}
+								className={cn("shrink-0", active ? "text-ink" : "text-ter")}
 							/>
-							{n.label}
+							{!col && <span className="animate-fadeIn">{n.label}</span>}
+							{col && <SideTip label={n.label} />}
 						</Link>
 					);
 				})}
@@ -156,26 +200,99 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 			<div className="flex-1" />
 
+			{/* collapse toggle — desktop only (the mobile drawer is always expanded) */}
+			{!isDrawer && (
+				<button
+					type="button"
+					onClick={toggleCollapsed}
+					aria-label={col ? "展開側邊欄" : "收合側邊欄"}
+					className={cn(
+						"group relative mb-2 flex items-center rounded-[7px] py-[7px] font-sans text-xs font-medium text-ter transition-colors hover:text-ink",
+						col ? "justify-center px-0" : "gap-2.5 px-2",
+					)}
+				>
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						aria-hidden="true"
+						className={cn(
+							"shrink-0 transition-transform duration-200",
+							col && "rotate-180",
+						)}
+					>
+						<path
+							d="M15 6l-6 6 6 6"
+							stroke="currentColor"
+							strokeWidth="1.8"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						/>
+					</svg>
+					{!col && <span className="animate-fadeIn">收合側邊欄</span>}
+					{col && <SideTip label="展開" />}
+				</button>
+			)}
+
 			{/* session footer */}
-			<div className="border-t border-line-soft px-1 pt-3">
-				<div className="mb-2 break-all px-1 font-sans text-[10.5px] text-ter">
-					{user ? user.email : "訪客 · 展示資料"}
-				</div>
+			<div
+				className={cn("border-t border-line-soft pt-3", col ? "px-0" : "px-1")}
+			>
+				{!col && (
+					<div className="mb-2 animate-fadeIn break-all px-1 font-sans text-[10.5px] text-ter">
+						{user ? user.email : "訪客 · 展示資料"}
+					</div>
+				)}
 				{user ? (
 					<button
 						type="button"
 						onClick={logout}
-						className="w-full cursor-pointer rounded-[7px] border border-line bg-transparent py-[7px] font-sans text-xs font-medium text-sec transition-colors hover:text-ink"
+						className="group relative flex w-full cursor-pointer items-center justify-center gap-2 rounded-[7px] border border-line bg-transparent py-[7px] font-sans text-xs font-medium text-sec transition-colors hover:text-ink"
 					>
-						登出
+						<svg
+							width="15"
+							height="15"
+							viewBox="0 0 24 24"
+							fill="none"
+							aria-hidden="true"
+							className="shrink-0"
+						>
+							<path
+								d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
+								stroke="currentColor"
+								strokeWidth="1.8"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
+						{!col && <span className="animate-fadeIn">登出</span>}
+						{col && <SideTip label="登出" />}
 					</button>
 				) : (
 					<button
 						type="button"
 						onClick={() => router.push("/login")}
-						className="w-full cursor-pointer rounded-[7px] border-0 bg-primary py-[7px] font-sans text-xs font-semibold text-white"
+						className="group relative flex w-full cursor-pointer items-center justify-center gap-2 rounded-[7px] border-0 bg-primary py-[7px] font-sans text-xs font-semibold text-white"
 					>
-						登入 / 註冊
+						<svg
+							width="15"
+							height="15"
+							viewBox="0 0 24 24"
+							fill="none"
+							aria-hidden="true"
+							className="shrink-0"
+						>
+							<path
+								d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"
+								stroke="currentColor"
+								strokeWidth="1.8"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							/>
+						</svg>
+						{!col && <span className="animate-fadeIn">登入 / 註冊</span>}
+						{col && <SideTip label="登入 / 註冊" />}
 					</button>
 				)}
 			</div>
@@ -184,18 +301,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 	return (
 		<div className="flex h-screen overflow-hidden bg-app font-sans">
-			{!narrow && sidebar}
+			{!narrow && renderSidebar(collapsed, false)}
 
-			{/* mobile drawer */}
+			{/* mobile drawer — always full-width (collapse is a desktop-only affordance) */}
 			{narrow && drawer && (
 				<div className="fixed inset-0 z-[200] flex">
 					<button
 						type="button"
 						aria-label="close menu"
-						onClick={() => setDrawer(false)}
-						className="absolute inset-0 cursor-default border-0 bg-black/45"
+						onClick={closeDrawer}
+						className={cn(
+							"absolute inset-0 cursor-default border-0 bg-black/45",
+							drawerClosing ? "animate-fadeOut" : "animate-fadeIn",
+						)}
 					/>
-					<div className="relative h-full animate-fadeIn bg-app">{sidebar}</div>
+					<div
+						className={cn(
+							"relative h-full bg-app",
+							drawerClosing ? "animate-slideOutLeft" : "animate-slideInLeft",
+						)}
+					>
+						{renderSidebar(false, true)}
+					</div>
 				</div>
 			)}
 
