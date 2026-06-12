@@ -11,6 +11,8 @@ import { EXCHANGE_KEYS, getAdapter } from "@/lib/exchanges";
 import type { ExchangeKey } from "@/lib/exchanges/types";
 
 export const runtime = "nodejs";
+// Bybit/Binance/OKX block US IPs — run these in Singapore (exchange-friendly), not Vercel's default US region.
+export const preferredRegion = "sin1";
 export const dynamic = "force-dynamic";
 
 export async function GET(

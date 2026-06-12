@@ -5,6 +5,8 @@ import { DEMO_BALANCES, DEMO_POSITIONS, DEMO_TRADES } from "@/lib/demo";
 import { buildSnapshot, type PortfolioSnapshot } from "@/lib/portfolio";
 
 export const runtime = "nodejs";
+// Bybit/Binance/OKX block US IPs — run these in Singapore (exchange-friendly), not Vercel's default US region.
+export const preferredRegion = "sin1";
 export const dynamic = "force-dynamic";
 
 // Per-user snapshot cache. The client's safety poll uses the cache; an account-WS

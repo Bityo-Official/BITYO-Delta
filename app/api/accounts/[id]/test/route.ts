@@ -6,6 +6,8 @@ import { getAdapter } from "@/lib/exchanges";
 import type { ExchangeKey } from "@/lib/exchanges/types";
 
 export const runtime = "nodejs";
+// Bybit/Binance/OKX block US IPs — run these in Singapore (exchange-friendly), not Vercel's default US region.
+export const preferredRegion = "sin1";
 
 // Re-test connectivity for a saved account.
 export async function POST(
