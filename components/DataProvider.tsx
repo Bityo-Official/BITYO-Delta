@@ -152,8 +152,10 @@ export function DataProvider({
 		marksRef.current = marks;
 		accountRef.current = account;
 		setWsConnected(true);
-		// safety poll (cached): refreshes structure + venues without a public mark WS
-		const poll = setInterval(() => refreshRef.current(false), 8000);
+		// safety poll (cached): structure + the venues without a public mark WS. Kept
+		// slow on purpose — the private account WS already pushes instant trade updates,
+		// so this only needs to be a periodic backstop (and stay under IP rate limits).
+		const poll = setInterval(() => refreshRef.current(false), 20_000);
 		return () => {
 			clearInterval(poll);
 			marks.closeAll();

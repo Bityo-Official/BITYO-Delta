@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -40,7 +41,18 @@ export default function RootLayout({
 				{/* biome-ignore lint/security/noDangerouslySetInnerHtml: theme bootstrap must run pre-hydration to avoid FOUC */}
 				<script dangerouslySetInnerHTML={{ __html: themeInit }} />
 			</head>
-			<body>{children}</body>
+			<body>
+				{/* top route-change progress bar (App Router compatible) */}
+				<NextTopLoader
+					color="#17FFAC"
+					height={2}
+					showSpinner={false}
+					easing="ease"
+					speed={500}
+					shadow="0 0 8px #17FFAC,0 0 4px #17FFAC"
+				/>
+				{children}
+			</body>
 		</html>
 	);
 }

@@ -78,6 +78,34 @@ function credsOf(acc: {
 	};
 }
 
+// ── per-exchange rate-limit gate (server-global; the limits are per-IP) ──
+// When an exchange rate-limits us, stop calling it until it recovers and serve the last
+// good data for that account instead of blanking the dashboard. Several venues hand us
+// an explicit unblock timestamp (BingX "...unblocked after <ms>"; Pionex x-ratelimit-lock)
+// — honor it exactly; otherwise back off 60s.
+const exchangeGate = new Map<ExchangeKey, { until: number; reason: string }>();
+const accountLastGood = new Map<
+	string,
+	{
+		positions: NormPosition[];
+		balance: NormBalance | null;
+		trades: NormTrade[];
+	}
+>();
+
+function parseRateLimit(msg: string): { isRL: boolean; until: number } {
+	const rl =
+		/429|too many requests|rate.?limit|frequency limit|100410|disabled period/i.test(
+			msg,
+		);
+	if (!rl) return { isRL: false, until: 0 };
+	// explicit 13-digit epoch-ms unblock time, if the venue provided one
+	const m = msg.match(/(\d{13})/);
+	const explicit = m ? Number(m[1]) : 0;
+	const until = explicit > Date.now() ? explicit + 2_000 : Date.now() + 60_000;
+	return { isRL: true, until };
+}
+
 export async function buildSnapshot(
 	userId: string,
 ): Promise<PortfolioSnapshot> {
@@ -105,30 +133,62 @@ export async function buildSnapshot(
 		accounts.map(async (acc) => {
 			const ex = acc.exchange as ExchangeKey;
 			const adapter = getAdapter(ex);
-			const creds = credsOf(acc);
 			let error: string | null = null;
-			try {
-				const [pos, bal, hist] = await Promise.all([
-					adapter.getPositions(creds),
-					adapter.getBalance(creds),
-					getHistoryCached(acc.id, ex, () =>
-						adapter.getHistory(creds).catch((e) => {
-							// history is non-fatal, but DON'T fail silently — log so missing
-							// 平倉紀錄 can be diagnosed from the server console
-							console.warn(
-								`[${ex}] getHistory failed:`,
-								e instanceof Error ? e.message : e,
-							);
-							return [] as NormTrade[];
-						}),
-					),
-				]);
-				positions.push(...pos);
-				balances.push(bal);
-				trades.push(...hist);
-			} catch (e: any) {
-				error = e?.message ?? String(e);
+
+			const applyLastGood = () => {
+				const lg = accountLastGood.get(acc.id);
+				if (lg) {
+					positions.push(...lg.positions);
+					if (lg.balance) balances.push(lg.balance);
+					trades.push(...lg.trades);
+				}
+			};
+
+			// gated: this exchange is rate-limited — skip the live call, serve last-good
+			const gate = exchangeGate.get(ex);
+			if (gate && gate.until > Date.now()) {
+				applyLastGood();
+				error = gate.reason;
+			} else {
+				const creds = credsOf(acc);
+				try {
+					const [pos, bal, hist] = await Promise.all([
+						adapter.getPositions(creds),
+						adapter.getBalance(creds),
+						getHistoryCached(acc.id, ex, () =>
+							adapter.getHistory(creds).catch((e) => {
+								console.warn(
+									`[${ex}] getHistory failed:`,
+									e instanceof Error ? e.message : e,
+								);
+								return [] as NormTrade[];
+							}),
+						),
+					]);
+					positions.push(...pos);
+					balances.push(bal);
+					trades.push(...hist);
+					accountLastGood.set(acc.id, {
+						positions: pos,
+						balance: bal,
+						trades: hist,
+					});
+					exchangeGate.delete(ex); // recovered
+				} catch (e: any) {
+					error = e?.message ?? String(e);
+					const { isRL, until } = parseRateLimit(error ?? "");
+					if (isRL) {
+						const reason = `${ex} 限流冷卻至 ${new Date(until).toLocaleTimeString("zh-TW")}`;
+						exchangeGate.set(ex, { until, reason });
+						console.warn(
+							`[${ex}] rate-limited → 暫停呼叫至 ${new Date(until).toLocaleString("zh-TW")}`,
+						);
+						error = reason;
+					}
+					applyLastGood(); // show stale rather than blank
+				}
 			}
+
 			statuses.push({
 				id: acc.id,
 				exchange: ex,
