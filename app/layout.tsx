@@ -1,11 +1,60 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import NextTopLoader from "nextjs-toploader";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
+const OG_TITLE = "Bityo Delta · 跨所合約對沖記帳儀表板";
+const OG_DESC =
+	"整合七大交易所的合約持倉、對沖監控與資金費率,一眼掌握跨所淨曝險。";
+
 export const metadata: Metadata = {
-	title: "Bityo Delta · 跨所合約記帳",
-	description:
-		"跨交易所合約對沖記帳儀表板 — 持倉、對沖監控、資金費率與資產分佈",
+	metadataBase: new URL(SITE_URL),
+	title: {
+		default: OG_TITLE,
+		template: `%s · ${SITE_NAME}`,
+	},
+	description: SITE_DESCRIPTION,
+	applicationName: SITE_NAME,
+	keywords: [
+		"合約對沖",
+		"跨交易所",
+		"資金費率",
+		"永續合約",
+		"持倉管理",
+		"Delta 中性",
+		"Binance",
+		"Bybit",
+		"OKX",
+		"加密貨幣記帳",
+	],
+	authors: [{ name: SITE_NAME }],
+	creator: SITE_NAME,
+	alternates: { canonical: "/" },
+	openGraph: {
+		type: "website",
+		locale: "zh_TW",
+		url: SITE_URL,
+		siteName: SITE_NAME,
+		title: OG_TITLE,
+		description: OG_DESC,
+	},
+	twitter: {
+		card: "summary_large_image",
+		title: OG_TITLE,
+		description: OG_DESC,
+	},
+	robots: {
+		index: true,
+		follow: true,
+		googleBot: { index: true, follow: true, "max-image-preview": "large" },
+	},
+};
+
+export const viewport: Viewport = {
+	themeColor: [
+		{ media: "(prefers-color-scheme: light)", color: "#ffffff" },
+		{ media: "(prefers-color-scheme: dark)", color: "#0A0A0B" },
+	],
 };
 
 // Apply theme classes BEFORE hydration to avoid a flash of the wrong scheme.

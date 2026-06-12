@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { DataProvider } from "@/components/DataProvider";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { getCurrentUser } from "@/lib/auth";
+
+// private, per-user app surface — never index it
+export const metadata: Metadata = {
+	robots: { index: false, follow: false },
+};
 
 // Server component + AUTH GATE: the dashboard requires login. Resolve the session user
 // on the server (from the JWT — no DB round-trip) so the chrome is correct on first

@@ -5,8 +5,41 @@ import { Hero3D } from "@/components/landing/Hero3D";
 import { ExChip } from "@/components/primitives";
 import { getCurrentUser } from "@/lib/auth";
 import { EXCHANGE_META, type ExchangeKey } from "@/lib/exchanges/types";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
+
+// Structured data — helps Google render a richer result for the brand/app.
+const JSON_LD = {
+	"@context": "https://schema.org",
+	"@graph": [
+		{
+			"@type": "Organization",
+			"@id": `${SITE_URL}/#org`,
+			name: SITE_NAME,
+			url: SITE_URL,
+			logo: `${SITE_URL}/icon.png`,
+		},
+		{
+			"@type": "WebSite",
+			"@id": `${SITE_URL}/#website`,
+			url: SITE_URL,
+			name: SITE_NAME,
+			description: SITE_DESCRIPTION,
+			publisher: { "@id": `${SITE_URL}/#org` },
+			inLanguage: "zh-TW",
+		},
+		{
+			"@type": "SoftwareApplication",
+			name: SITE_NAME,
+			applicationCategory: "FinanceApplication",
+			operatingSystem: "Web",
+			description: SITE_DESCRIPTION,
+			url: SITE_URL,
+			offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+		},
+	],
+};
 
 const FEATURES = [
 	{
@@ -60,6 +93,11 @@ export default async function Landing() {
 
 	return (
 		<main className="min-h-screen overflow-x-hidden bg-[#0A0A0B] font-sans text-white antialiased">
+			<script
+				type="application/ld+json"
+				// biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD is static, server-rendered structured data
+				dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+			/>
 			{/* nav */}
 			<header className="fixed inset-x-0 top-0 z-50 border-b border-white/[.06] bg-[#0A0A0B]/70 backdrop-blur-xl">
 				<div className="mx-auto flex h-16 max-w-6xl items-center px-6">
