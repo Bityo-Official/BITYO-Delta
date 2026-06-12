@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 	if (!user || !(await verifyPassword(password, user.password))) {
 		return NextResponse.json({ error: "Email 或密碼錯誤" }, { status: 401 });
 	}
-	await createSession(user.id, req.headers.get("user-agent") ?? undefined);
+	await createSession(user, req.headers.get("user-agent") ?? undefined);
 	return NextResponse.json({
 		user: { id: user.id, email: user.email, name: user.name },
 	});

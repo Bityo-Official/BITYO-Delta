@@ -28,7 +28,7 @@ export async function POST(req: Request) {
 	const user = await prisma.user.create({
 		data: { email, password: await hashPassword(password), name: name || null },
 	});
-	await createSession(user.id, req.headers.get("user-agent") ?? undefined);
+	await createSession(user, req.headers.get("user-agent") ?? undefined);
 	return NextResponse.json({
 		user: { id: user.id, email: user.email, name: user.name },
 	});

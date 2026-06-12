@@ -36,7 +36,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 			if (!r.ok) {
 				setError(j.error ?? "發生錯誤");
 			} else {
-				router.push("/");
+				router.push("/dashboard");
 				router.refresh();
 			}
 		} catch (e) {
@@ -146,7 +146,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
 				<div className="mt-[18px] text-center">
 					<Link href="/" className="text-xs text-ter no-underline">
-						← 以訪客身分瀏覽展示資料
+						← 返回首頁
 					</Link>
 				</div>
 			</div>

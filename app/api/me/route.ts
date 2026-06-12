@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getCurrentUser } from "@/lib/auth";
+import { createSession, getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -28,14 +28,15 @@ export async function PATCH(req: Request) {
 		where: { id: user.id },
 		data: parsed.data,
 	});
-	return NextResponse.json({
-		user: {
-			id: updated.id,
-			email: updated.email,
-			name: updated.name,
-			dark: updated.dark,
-			primary: updated.primary,
-			settleCcy: updated.settleCcy,
-		},
-	});
+	const fresh = {
+		id: updated.id,
+		email: updated.email,
+		name: updated.name,
+		settleCcy: updated.settleCcy,
+		dark: updated.dark,
+		primary: updated.primary,
+	};
+	// identity now lives in the JWT — re-issue it so the change survives a page refresh
+	await createSession(fresh);
+	return NextResponse.json({ user: fresh });
 }

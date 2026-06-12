@@ -15,11 +15,11 @@ import type { PageProps } from "./pages";
 
 // ── route table: each section is a real URL ──
 const NAV: { href: string; label: string; icon: TabIconName }[] = [
-	{ href: "/", label: "總覽", icon: "overview" },
-	{ href: "/hedge", label: "對沖監控", icon: "hedge" },
-	{ href: "/ledger", label: "記帳", icon: "ledger" },
-	{ href: "/assets", label: "資產", icon: "assets" },
-	{ href: "/settings", label: "設定", icon: "me" },
+	{ href: "/dashboard", label: "總覽", icon: "overview" },
+	{ href: "/dashboard/hedge", label: "對沖監控", icon: "hedge" },
+	{ href: "/dashboard/ledger", label: "記帳", icon: "ledger" },
+	{ href: "/dashboard/assets", label: "資產", icon: "assets" },
+	{ href: "/dashboard/settings", label: "設定", icon: "me" },
 ];
 
 // ── dashboard context: computed PageProps for the current snapshot ──
@@ -45,7 +45,7 @@ function useNarrow() {
 export function AppShell({ children }: { children: React.ReactNode }) {
 	const router = useRouter();
 	const pathname = usePathname();
-	const { snapshot, user, dark, setDark, reloadUser } = useData();
+	const { snapshot, user, dark, setDark } = useData();
 	const [selected, setSelected] = React.useState<NormPosition | null>(null);
 	const [drawer, setDrawer] = React.useState(false);
 	const narrow = useNarrow();
@@ -97,18 +97,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 	async function logout() {
 		await fetch("/api/auth/logout", { method: "POST" });
-		await reloadUser();
-		router.refresh();
+		router.push("/");
 	}
 
 	const isActive = (href: string) =>
-		href === "/" ? pathname === "/" : pathname.startsWith(href);
+		href === "/dashboard"
+			? pathname === "/dashboard"
+			: pathname.startsWith(href);
 
 	const sidebar = (
 		<div className="flex h-full w-52 shrink-0 flex-col border-r border-line bg-app px-3 pb-3.5 pt-[18px]">
 			{/* wordmark */}
 			<Link
-				href="/"
+				href="/dashboard"
 				className="flex items-center gap-2 px-2 pb-[18px] pt-0.5 no-underline"
 			>
 				{/* real site icon (app/icon.png — served by Next at /icon.png) */}

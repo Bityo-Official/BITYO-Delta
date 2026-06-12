@@ -16,7 +16,7 @@ function secret(): Uint8Array {
 }
 
 export async function hashPassword(pw: string): Promise<string> {
-	return bcrypt.hash(pw, 11);
+	return bcrypt.hash(pw, 10);
 }
 export async function verifyPassword(
 	pw: string,
@@ -25,18 +25,39 @@ export async function verifyPassword(
 	return bcrypt.compare(pw, hash);
 }
 
-// Create a DB session row + signed JWT, set as httpOnly cookie.
+export interface SessionUser {
+	id: string;
+	email: string;
+	name: string | null;
+	settleCcy: string;
+	dark: boolean;
+	primary: string;
+}
+
+// Create a signed JWT cookie carrying the user's identity, so getCurrentUser() needs
+// NO database round-trip on the hot path (every SSR page + API call calls it). The DB
+// session row is written fire-and-forget for audit / future revocation only — the login
+// response doesn't wait on it (the remote Supabase round-trip was a big chunk of the
+// observed login latency).
 export async function createSession(
-	userId: string,
+	user: SessionUser,
 	userAgent?: string,
-): Promise<string> {
+): Promise<void> {
 	const token = randomBytes(24).toString("hex");
 	const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400_000);
-	await prisma.session.create({
-		data: { userId, token, userAgent, expiresAt },
-	});
+	void prisma.session
+		.create({ data: { userId: user.id, token, userAgent, expiresAt } })
+		.catch(() => {});
 
-	const jwt = await new SignJWT({ sid: token, uid: userId })
+	const jwt = await new SignJWT({
+		sid: token,
+		uid: user.id,
+		email: user.email,
+		name: user.name,
+		dark: user.dark,
+		primary: user.primary,
+		settleCcy: user.settleCcy,
+	})
 		.setProtectedHeader({ alg: "HS256" })
 		.setIssuedAt()
 		.setExpirationTime(`${SESSION_DAYS}d`)
@@ -49,38 +70,23 @@ export async function createSession(
 		path: "/",
 		expires: expiresAt,
 	});
-	return token;
 }
 
-export interface SessionUser {
-	id: string;
-	email: string;
-	name: string | null;
-	settleCcy: string;
-	dark: boolean;
-	primary: string;
-}
-
-// Resolve the current user from the cookie, validating the DB session.
+// Resolve the current user straight from the cryptographically-verified JWT — no DB.
+// jwtVerify throws on a tampered/expired token, so expiry is enforced without a query.
 export async function getCurrentUser(): Promise<SessionUser | null> {
 	const jwt = cookies().get(COOKIE)?.value;
 	if (!jwt) return null;
 	try {
 		const { payload } = await jwtVerify(jwt, secret());
-		const sid = payload.sid as string;
-		const session = await prisma.session.findUnique({
-			where: { token: sid },
-			include: { user: true },
-		});
-		if (!session || session.expiresAt < new Date()) return null;
-		const u = session.user;
+		if (!payload.uid) return null;
 		return {
-			id: u.id,
-			email: u.email,
-			name: u.name,
-			settleCcy: u.settleCcy,
-			dark: u.dark,
-			primary: u.primary,
+			id: payload.uid as string,
+			email: (payload.email as string) ?? "",
+			name: (payload.name as string | null) ?? null,
+			settleCcy: (payload.settleCcy as string) ?? "USDT",
+			dark: !!payload.dark,
+			primary: (payload.primary as string) ?? "indigo",
 		};
 	} catch {
 		return null;
@@ -101,17 +107,3 @@ export async function destroySession(): Promise<void> {
 	}
 	cookies().delete(COOKIE);
 }
-
-// Verify a raw JWT string (used by the WebSocket server, which has no Next cookies()).
-export async function verifyJwt(
-	jwt: string,
-): Promise<{ uid: string; sid: string } | null> {
-	try {
-		const { payload } = await jwtVerify(jwt, secret());
-		return { uid: payload.uid as string, sid: payload.sid as string };
-	} catch {
-		return null;
-	}
-}
-
-export { COOKIE as SESSION_COOKIE };
