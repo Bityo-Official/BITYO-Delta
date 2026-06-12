@@ -1,0 +1,58 @@
+// Bityo Delta — Prisma schema (Supabase PostgreSQL)
+// DATABASE_URL  = Transaction pooler (port 6543, pgbouncer) — runtime queries
+// DIRECT_URL    = Session pooler (port 5432) — `prisma db push` / migrations
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String            @id @default(cuid())
+  email     String            @unique
+  password  String // bcrypt hash
+  name      String?
+  createdAt DateTime          @default(now())
+  accounts  ExchangeAccount[]
+  sessions  Session[]
+  // user preferences
+  settleCcy String            @default("USDT")
+  dark      Boolean           @default(false)
+  primary   String            @default("indigo")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique // random session id embedded in JWT
+  userAgent String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+}
+
+// One connected exchange API key per row. Secret + passphrase are AES-256-GCM encrypted.
+model ExchangeAccount {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchange     String // 'binance' | 'bybit' | 'okx' | 'bingx' | 'bitget' | 'bitunix' | 'pionex'
+  label        String? // optional user label
+  apiKey       String // encrypted
+  apiSecret    String // encrypted
+  passphrase   String? // encrypted (OKX / Bitget / Bitunix require it)
+  enabled      Boolean  @default(true)
+  lastSyncAt   DateTime?
+  lastError    String?
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, exchange, apiKey])
+  @@index([userId])
+}
