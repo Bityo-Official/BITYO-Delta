@@ -49,6 +49,43 @@ export function SettingsPage({
 		text: string;
 	} | null>(null);
 
+	// third-party (OAuth) account links
+	const [conn, setConn] = React.useState<{
+		hasPassword: boolean;
+		google: { linked: boolean; email: string | null; image: string | null };
+	} | null>(null);
+	const [connMsg, setConnMsg] = React.useState<{
+		kind: "ok" | "err";
+		text: string;
+	} | null>(null);
+	const loadConn = React.useCallback(async () => {
+		const r = await fetch("/api/me/connections");
+		if (r.ok) setConn(await r.json());
+	}, []);
+	React.useEffect(() => {
+		if (user) loadConn();
+	}, [user, loadConn]);
+	// surface the Google link callback result (?linked=google / ?error=…)
+	React.useEffect(() => {
+		const p = new URLSearchParams(window.location.search);
+		if (p.get("linked") === "google")
+			setConnMsg({ kind: "ok", text: "已成功綁定 Google" });
+		else if (p.get("error"))
+			setConnMsg({ kind: "err", text: p.get("error") as string });
+		if (p.get("linked") || p.get("error"))
+			window.history.replaceState(null, "", window.location.pathname);
+	}, []);
+	async function unlinkGoogle() {
+		setConnMsg(null);
+		const r = await fetch("/api/me/connections", { method: "DELETE" });
+		const j = await r.json();
+		if (!r.ok) setConnMsg({ kind: "err", text: j.error ?? "解除失敗" });
+		else {
+			setConnMsg({ kind: "ok", text: "已解除 Google 綁定" });
+			await loadConn();
+		}
+	}
+
 	const load = React.useCallback(async () => {
 		setLoading(true);
 		try {
@@ -428,6 +465,96 @@ export function SettingsPage({
 							{busy ? "連線測試中…" : "連接交易所"}
 						</button>
 					</form>
+				</DPanel>
+			</div>
+
+			{/* third-party account links */}
+			<div className="mt-4">
+				<DPanel title="第三方帳號" hint="登入方式">
+					<div className="flex flex-wrap items-center gap-3 rounded-[10px] border border-line-soft bg-card2 p-3.5">
+						{/* Google glyph */}
+						<span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-sunken dark:bg-card">
+							<svg
+								width="18"
+								height="18"
+								viewBox="0 0 24 24"
+								aria-hidden="true"
+							>
+								<path
+									fill="#4285F4"
+									d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+								/>
+								<path
+									fill="#34A853"
+									d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"
+								/>
+								<path
+									fill="#FBBC05"
+									d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"
+								/>
+								<path
+									fill="#EA4335"
+									d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"
+								/>
+							</svg>
+						</span>
+						<div className="min-w-[120px] flex-1">
+							<div className="flex flex-wrap items-center gap-2">
+								<span className="font-sans text-sm font-bold text-ink">
+									Google
+								</span>
+								{conn?.google.linked ? (
+									<MiniTag tone="primary">已綁定</MiniTag>
+								) : (
+									<MiniTag tone="warn">未綁定</MiniTag>
+								)}
+							</div>
+							<div className="mt-[3px] font-mono text-[11px] text-sec">
+								{conn === null
+									? "讀取中…"
+									: conn.google.linked
+										? conn.google.email
+										: "綁定後可用 Google 一鍵登入"}
+							</div>
+						</div>
+						{conn?.google.linked ? (
+							<button
+								type="button"
+								onClick={unlinkGoogle}
+								disabled={!conn.hasPassword}
+								title={
+									conn.hasPassword
+										? "解除 Google 綁定"
+										: "請先設定密碼，才能解除綁定"
+								}
+								className={cn(
+									"rounded-[7px] border px-3 py-[7px] font-sans text-xs font-medium",
+									conn.hasPassword
+										? "cursor-pointer border-down/35 bg-transparent text-down"
+										: "cursor-not-allowed border-line bg-transparent text-ter",
+								)}
+							>
+								解除綁定
+							</button>
+						) : (
+							<a
+								href="/api/auth/google?link=1"
+								className="cursor-pointer rounded-[7px] border-0 bg-primary px-3.5 py-[7px] font-sans text-xs font-semibold text-white no-underline"
+							>
+								綁定 Google
+							</a>
+						)}
+					</div>
+					{connMsg && (
+						<div
+							className={cn(
+								"mt-2.5 font-sans text-xs leading-relaxed",
+								connMsg.kind === "ok" ? "text-up" : "text-down",
+							)}
+						>
+							{connMsg.text}
+						</div>
+					)}
 				</DPanel>
 			</div>
 		</div>

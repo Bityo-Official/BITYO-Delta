@@ -17,13 +17,22 @@ export async function GET(req: Request) {
 	}
 
 	const state = randomBytes(16).toString("hex");
-	cookies().set("g_state", state, {
+	const cookieOpts = {
 		httpOnly: true,
-		sameSite: "lax",
+		sameSite: "lax" as const,
 		secure: process.env.NODE_ENV === "production",
 		path: "/",
 		maxAge: 600,
-	});
+	};
+	cookies().set("g_state", state, cookieOpts);
+
+	// `?link=1` → link Google to the CURRENTLY logged-in account (settings page),
+	// instead of the normal sign-in / sign-up flow. The callback reads this cookie.
+	if (new URL(req.url).searchParams.get("link") === "1") {
+		cookies().set("g_link", "1", cookieOpts);
+	} else {
+		cookies().delete("g_link");
+	}
 
 	const params = new URLSearchParams({
 		client_id: clientId,
