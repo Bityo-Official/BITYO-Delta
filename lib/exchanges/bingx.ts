@@ -10,6 +10,7 @@ import {
 	type NormBalance,
 	type NormPosition,
 	type NormTrade,
+	type WsAuth,
 } from "./types";
 
 const BASE = "https://open-api.bingx.com";
@@ -149,6 +150,26 @@ export const bingx: ExchangeAdapter = {
 			}),
 		);
 		return out;
+	},
+
+	// Private user-data stream via listenKey (no signature needed; API key header only).
+	// NOTE: BingX WS frames are GZIP-compressed — the browser client must inflate them
+	// (DecompressionStream). Unverified against a live key.
+	async getWsAuth(c) {
+		const r = await httpJson<{ listenKey: string }>(
+			`${BASE}/openApi/user/auth/userDataStream`,
+			{
+				exchange: "bingx",
+				method: "POST",
+				headers: { "X-BX-APIKEY": c.apiKey },
+			},
+		);
+		return {
+			url: `wss://open-api-swap.bingx.com/swap-market?listenKey=${r.listenKey}`,
+			auth: null,
+			listenKey: r.listenKey,
+			ttlSec: 3000,
+		} satisfies WsAuth;
 	},
 
 	async ping(c) {

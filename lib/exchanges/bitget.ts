@@ -9,6 +9,7 @@ import {
 	type MarkTick,
 	type NormBalance,
 	type NormPosition,
+	type WsAuth,
 } from "./types";
 
 const BASE = "https://api.bitget.com";
@@ -147,6 +148,28 @@ export const bitget: ExchangeAdapter = {
 				});
 		}
 		return out;
+	},
+
+	// Private WS login — sign `${ts}GET/user/verify` (HMAC-SHA256 → base64), ts in seconds.
+	// secret stays server-side. Unverified against a live key.
+	async getWsAuth(c) {
+		const ts = Math.floor(Date.now() / 1000).toString();
+		const sign = hmacBase64(c.apiSecret, `${ts}GET/user/verify`);
+		return {
+			url: "wss://ws.bitget.com/v2/ws/private",
+			auth: {
+				op: "login",
+				args: [
+					{
+						apiKey: c.apiKey,
+						passphrase: c.passphrase ?? "",
+						timestamp: ts,
+						sign,
+					},
+				],
+			},
+			ttlSec: 30,
+		} satisfies WsAuth;
 	},
 
 	async ping(c) {

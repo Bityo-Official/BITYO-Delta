@@ -19,6 +19,7 @@ import {
 	type NormBalance,
 	type NormPosition,
 	type NormTrade,
+	type WsAuth,
 } from "./types";
 
 const BASE = "https://api.pionex.com";
@@ -436,6 +437,19 @@ export const pionex: ExchangeAdapter = {
 		} catch {
 			return [];
 		}
+	},
+
+	// Private WS auth per docs: sign `${timestamp}websocket_auth` (HMAC-SHA256 → hex).
+	// secret stays server-side. URL per Pionex futures-websocket docs — confirm with a
+	// live key if the stream fails to connect.
+	async getWsAuth(c) {
+		const ts = String(now());
+		const sign = hmacHex(c.apiSecret, `${ts}websocket_auth`);
+		return {
+			url: "wss://ws.pionex.com/wsPriv",
+			auth: { op: "auth", args: [c.apiKey, ts, sign] },
+			ttlSec: 30,
+		} satisfies WsAuth;
 	},
 
 	async ping(c) {

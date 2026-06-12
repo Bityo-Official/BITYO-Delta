@@ -1,9 +1,16 @@
 "use client";
-// DataProvider.tsx — fetches the portfolio snapshot, opens the live WebSocket, merges
-// mark-price ticks into positions, and exposes everything via the useData() hook.
+// DataProvider.tsx — owns the portfolio snapshot and the CLIENT-side realtime engine:
+//   • initial + safety-poll fetch of /api/portfolio (authoritative structure)
+//   • public mark-price WS straight from the browser → live price / uPnL ticks
+//   • private account WS (signed by /api/ws-auth) → instant re-fetch on trades
+// No custom server / no /ws — runs on plain Next (Vercel-compatible) and scales because
+// every exchange connection is made from each user's own IP.
 import React, { useEffect } from "react";
+import { AccountSignalManager } from "@/components/realtime/accountSignal";
+import { PublicMarkManager } from "@/components/realtime/publicMarks";
 import { applyTick } from "@/lib/derive";
 import type {
+	ExchangeKey,
 	NormBalance,
 	NormPosition,
 	NormTrade,
@@ -73,7 +80,9 @@ export function DataProvider({
 	const [primary, setPrimaryState] = React.useState<PrimaryKey>(
 		(initialUser?.primary as PrimaryKey) || "indigo",
 	);
-	const wsRef = React.useRef<WebSocket | null>(null);
+	const marksRef = React.useRef<PublicMarkManager | null>(null);
+	const accountRef = React.useRef<AccountSignalManager | null>(null);
+	const refreshRef = React.useRef<(fresh?: boolean) => void>(() => {});
 
 	const reloadUser = React.useCallback(async () => {
 		try {
@@ -110,45 +119,77 @@ export function DataProvider({
 			.finally(() => setLoading(false));
 	}, [user?.id]);
 
-	// live WebSocket — reconnecting
-	// biome-ignore lint/correctness/useExhaustiveDependencies: user?.id 變更時重建 WS 連線
-	useEffect(() => {
-		let closed = false;
-		let retry: ReturnType<typeof setTimeout>;
-		const connect = () => {
-			if (closed) return;
-			const proto = location.protocol === "https:" ? "wss" : "ws";
-			const ws = new WebSocket(`${proto}://${location.host}/ws`);
-			wsRef.current = ws;
-			ws.onopen = () => setWsConnected(true);
-			ws.onclose = () => {
-				setWsConnected(false);
-				if (!closed) retry = setTimeout(connect, 3000);
-			};
-			ws.onerror = () => ws.close();
-			ws.onmessage = (ev) => {
-				let msg: any;
-				try {
-					msg = JSON.parse(ev.data);
-				} catch {
-					return;
-				}
-				if (msg.type === "snapshot") setSnapshot(msg.snapshot);
-				else if (msg.type === "tick")
-					setSnapshot((prev) =>
-						prev
-							? { ...prev, positions: applyTick(prev.positions, msg.tick) }
-							: prev,
-					);
-			};
-		};
-		connect();
+	// authoritative re-fetch (kept in a ref so realtime managers always call the latest).
+	// `fresh` bypasses the server-side per-user cache — used when an account event means
+	// a just-executed trade must appear now; the safety poll uses the cache.
+	const doFetch = React.useCallback((fresh = false) => {
+		fetch(`/api/portfolio${fresh ? "?fresh=1" : ""}`)
+			.then((r) => r.json())
+			.then(setSnapshot)
+			.catch(() => {});
+	}, []);
+	refreshRef.current = doFetch;
+	// context-exposed refresh is user-initiated (e.g. after adding a key) → always fresh
+	const refresh = React.useCallback(() => refreshRef.current(true), []);
+
+	// debounce account-change signals — a burst of fills collapses into one fresh re-fetch
+	const debouncedRefresh = React.useMemo(() => {
+		let t: ReturnType<typeof setTimeout> | null = null;
 		return () => {
-			closed = true;
-			clearTimeout(retry);
-			wsRef.current?.close();
+			if (t) clearTimeout(t);
+			t = setTimeout(() => refreshRef.current(true), 700);
 		};
-	}, [user?.id]);
+	}, []);
+
+	// realtime engine — created once; lives for the provider's lifetime
+	useEffect(() => {
+		const marks = new PublicMarkManager((tick) =>
+			setSnapshot((prev) =>
+				prev ? { ...prev, positions: applyTick(prev.positions, tick) } : prev,
+			),
+		);
+		const account = new AccountSignalManager(() => debouncedRefresh());
+		marksRef.current = marks;
+		accountRef.current = account;
+		setWsConnected(true);
+		// safety poll (cached): refreshes structure + venues without a public mark WS
+		const poll = setInterval(() => refreshRef.current(false), 8000);
+		return () => {
+			clearInterval(poll);
+			marks.closeAll();
+			account.closeAll();
+			marksRef.current = null;
+			accountRef.current = null;
+			setWsConnected(false);
+		};
+	}, [debouncedRefresh]);
+
+	// stable signature of what to subscribe to (changes only when positions' symbols or
+	// connected exchanges change — mark-price ticks don't churn it)
+	const subSig = React.useMemo(() => {
+		const markVenues = new Set<ExchangeKey>(["binance", "bybit", "okx"]);
+		const marks = (snapshot?.positions ?? [])
+			.filter((p) => markVenues.has(p.exchange))
+			.map((p) => `${p.exchange}:${p.symbol}`);
+		const accounts = (snapshot?.accounts ?? []).map((a) => a.exchange);
+		return JSON.stringify({
+			m: [...new Set(marks)].sort(),
+			a: [...new Set(accounts)].sort(),
+		});
+	}, [snapshot]);
+
+	// reconcile the realtime managers to the current subscription signature
+	useEffect(() => {
+		const { m, a } = JSON.parse(subSig) as { m: string[]; a: string[] };
+		const markDesired = new Map<ExchangeKey, Set<string>>();
+		for (const key of m) {
+			const [ex, sym] = key.split(":") as [ExchangeKey, string];
+			if (!markDesired.has(ex)) markDesired.set(ex, new Set());
+			markDesired.get(ex)?.add(sym);
+		}
+		marksRef.current?.update(markDesired);
+		accountRef.current?.update(new Set(a as ExchangeKey[]));
+	}, [subSig]);
 
 	// Sync theme classes on <html> — Tailwind's `dark:` variant + `.accent-*` presets
 	// read these. The root layout's inline script sets the initial state pre-hydration.
@@ -186,15 +227,6 @@ export function DataProvider({
 		},
 		[user],
 	);
-
-	const refresh = React.useCallback(() => {
-		if (wsRef.current?.readyState === WebSocket.OPEN)
-			wsRef.current.send(JSON.stringify({ type: "refresh" }));
-		fetch("/api/portfolio")
-			.then((r) => r.json())
-			.then(setSnapshot)
-			.catch(() => {});
-	}, []);
 
 	return (
 		<Ctx.Provider

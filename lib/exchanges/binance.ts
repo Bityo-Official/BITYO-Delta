@@ -8,6 +8,7 @@ import {
 	type NormBalance,
 	type NormPosition,
 	type NormTrade,
+	type WsAuth,
 } from "./types";
 
 const BASE = "https://fapi.binance.com";
@@ -156,5 +157,21 @@ export const binance: ExchangeAdapter = {
 			headers: headers(c),
 		});
 		return true;
+	},
+
+	// Private user-data stream. listenKey creation only needs the API key header (no
+	// signature); the listenKey itself — NOT the secret — is what the browser puts in
+	// the WS URL. Kept alive with PUT /fapi/v1/listenKey < every 60min (by the route).
+	async getWsAuth(c) {
+		const r = await httpJson<{ listenKey: string }>(
+			`${BASE}/fapi/v1/listenKey`,
+			{ exchange: "binance", method: "POST", headers: headers(c) },
+		);
+		return {
+			url: `wss://fstream.binance.com/ws/${r.listenKey}`,
+			auth: null, // listenKey is in the URL; no auth message needed
+			listenKey: r.listenKey,
+			ttlSec: 3000, // 60min cap → refresh ~50min
+		} satisfies WsAuth;
 	},
 };

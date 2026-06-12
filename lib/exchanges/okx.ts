@@ -7,6 +7,7 @@ import {
 	type ExchangeAdapter,
 	type NormBalance,
 	type NormPosition,
+	type WsAuth,
 } from "./types";
 
 const BASE = "https://www.okx.com";
@@ -169,6 +170,29 @@ export const okx: ExchangeAdapter = {
 				fee: Number.parseFloat(t.fee || "0"),
 				funding: Number.parseFloat(t.fundingFee || "0"),
 			}));
+	},
+
+	// Private WS login — sign `${ts}GET/users/self/verify` (HMAC-SHA256 → base64).
+	// secret stays server-side; browser receives {apiKey, passphrase, timestamp, sign}
+	// and sends {op:"login"} then subscribes to positions / account / balance_and_position.
+	async getWsAuth(c) {
+		const ts = Math.floor(Date.now() / 1000).toString();
+		const sign = hmacBase64(c.apiSecret, `${ts}GET/users/self/verify`);
+		return {
+			url: "wss://ws.okx.com:8443/ws/v5/private",
+			auth: {
+				op: "login",
+				args: [
+					{
+						apiKey: c.apiKey,
+						passphrase: c.passphrase ?? "",
+						timestamp: ts,
+						sign,
+					},
+				],
+			},
+			ttlSec: 30,
+		} satisfies WsAuth;
 	},
 
 	async ping(c) {

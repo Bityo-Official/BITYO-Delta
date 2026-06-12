@@ -1,8 +1,10 @@
-// markStreams.ts — multiplex upstream PUBLIC mark-price websockets (no auth needed)
-// from Binance / Bybit / OKX and emit normalized ticks. One upstream connection per
-// exchange is shared across all browser clients; symbols are the union of what's needed.
-import WebSocket from "ws";
-import type { ExchangeKey, MarkTick } from "../exchanges/types";
+"use client";
+// publicMarks.ts — BROWSER-side public mark-price WebSocket multiplexer.
+// Each user's browser connects directly to the exchange public streams from their own
+// IP (this is what lets the realtime layer scale to many concurrent users without a
+// shared server IP hitting per-IP rate limits). No auth, no secret. Binance / Bybit /
+// OKX have clean public WS; the other venues are covered by the structural REST poll.
+import type { ExchangeKey, MarkTick } from "@/lib/exchanges/types";
 
 type Listener = (tick: MarkTick) => void;
 
@@ -20,8 +22,9 @@ function okxInst(symbol: string): string {
 class VenueStream {
 	private ws: WebSocket | null = null;
 	private symbols = new Set<string>();
-	private reconnectTimer: NodeJS.Timeout | null = null;
-	private pingTimer: NodeJS.Timeout | null = null;
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private pingTimer: ReturnType<typeof setInterval> | null = null;
+	private closed = false;
 
 	constructor(
 		private exchange: ExchangeKey,
@@ -42,36 +45,40 @@ class VenueStream {
 	}
 
 	private connect() {
-		if (this.ws) return;
+		if (this.ws || this.closed) return;
 		const ws = new WebSocket(this.url);
 		this.ws = ws;
-		ws.on("open", () => {
+		ws.onopen = () => {
 			if (this.symbols.size) this.send("subscribe", [...this.symbols]);
 			this.startPing();
-		});
-		ws.on("message", (buf) => this.onMessage(buf.toString()));
-		ws.on("close", () => this.scheduleReconnect());
-		ws.on("error", () => ws.close());
+		};
+		ws.onmessage = (ev) =>
+			this.onMessage(typeof ev.data === "string" ? ev.data : "");
+		ws.onclose = () => this.scheduleReconnect();
+		ws.onerror = () => ws.close();
 	}
 
 	private scheduleReconnect() {
 		this.ws = null;
 		if (this.pingTimer) clearInterval(this.pingTimer);
-		if (this.reconnectTimer) return;
+		if (this.reconnectTimer || this.closed) return;
 		this.reconnectTimer = setTimeout(() => {
 			this.reconnectTimer = null;
 			if (this.symbols.size) this.connect();
 		}, 2500);
 	}
 
+	// Browser WebSocket has no ping() frame API: Binance auto-pongs the server's pings,
+	// Bybit needs an app-level {op:"ping"}, OKX needs the literal string "ping".
 	private startPing() {
 		if (this.pingTimer) clearInterval(this.pingTimer);
+		if (this.exchange === "binance") return;
 		this.pingTimer = setInterval(() => {
-			if (this.ws?.readyState === WebSocket.OPEN) {
-				if (this.exchange === "okx") this.ws.send("ping");
-				else this.ws.ping();
-			}
-		}, 20_000);
+			if (this.ws?.readyState !== WebSocket.OPEN) return;
+			if (this.exchange === "okx") this.ws.send("ping");
+			else if (this.exchange === "bybit")
+				this.ws.send(JSON.stringify({ op: "ping" }));
+		}, 18_000);
 	}
 
 	private send(op: "subscribe" | "unsubscribe", symbols: string[]) {
@@ -102,7 +109,7 @@ class VenueStream {
 	}
 
 	private onMessage(raw: string) {
-		if (raw === "pong") return;
+		if (!raw || raw === "pong") return;
 		let msg: any;
 		try {
 			msg = JSON.parse(raw);
@@ -122,18 +129,16 @@ class VenueStream {
 			if (
 				typeof msg.topic === "string" &&
 				msg.topic.startsWith("tickers.") &&
-				msg.data
+				msg.data?.markPrice
 			) {
-				const d = msg.data;
-				if (d.markPrice)
-					this.emit({
-						exchange: "bybit",
-						symbol: d.symbol,
-						mark: Number.parseFloat(d.markPrice),
-						fundRate: d.fundingRate
-							? Number.parseFloat(d.fundingRate)
-							: undefined,
-					});
+				this.emit({
+					exchange: "bybit",
+					symbol: msg.data.symbol,
+					mark: Number.parseFloat(msg.data.markPrice),
+					fundRate: msg.data.fundingRate
+						? Number.parseFloat(msg.data.fundingRate)
+						: undefined,
+				});
 			}
 		} else if (this.exchange === "okx") {
 			if (msg.arg?.channel === "mark-price" && Array.isArray(msg.data)) {
@@ -148,6 +153,7 @@ class VenueStream {
 	}
 
 	close() {
+		this.closed = true;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		if (this.pingTimer) clearInterval(this.pingTimer);
 		this.ws?.close();
@@ -155,7 +161,7 @@ class VenueStream {
 	}
 }
 
-export class MarkStreamManager {
+export class PublicMarkManager {
 	private venues = new Map<ExchangeKey, VenueStream>();
 	constructor(private emit: Listener) {}
 

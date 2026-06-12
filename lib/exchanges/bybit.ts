@@ -7,6 +7,7 @@ import {
 	type ExchangeAdapter,
 	type NormBalance,
 	type NormPosition,
+	type WsAuth,
 } from "./types";
 
 const BASE = "https://api.bybit.com";
@@ -195,6 +196,19 @@ export const bybit: ExchangeAdapter = {
 			),
 			funding: 0,
 		}));
+	},
+
+	// Private WS auth — sign `GET/realtime${expires}`; secret stays server-side, only
+	// the {apiKey, expires, signature} triple goes to the browser. Client sends it as
+	// {op:"auth"} then subscribes to position / wallet / execution channels.
+	async getWsAuth(c) {
+		const expires = now() + 10_000;
+		const sign = hmacHex(c.apiSecret, `GET/realtime${expires}`);
+		return {
+			url: "wss://stream.bybit.com/v5/private",
+			auth: { op: "auth", args: [c.apiKey, expires, sign] },
+			ttlSec: 10, // signature expiry; client re-fetches on reconnect
+		} satisfies WsAuth;
 	},
 
 	async ping(c) {

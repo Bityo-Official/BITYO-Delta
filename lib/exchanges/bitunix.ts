@@ -12,6 +12,7 @@ import {
 	type NormBalance,
 	type NormPosition,
 	type NormTrade,
+	type WsAuth,
 } from "./types";
 
 const BASE = "https://fapi.bitunix.com";
@@ -239,6 +240,23 @@ export const bitunix: ExchangeAdapter = {
 			});
 		}
 		return out;
+	},
+
+	// Private WS login (double-SHA256, same family as the REST signing). secret stays
+	// server-side. UNVERIFIED — endpoint/field names may need adjustment with a live key.
+	async getWsAuth(c) {
+		const nonce = randomBytes(16).toString("hex");
+		const ts = String(now());
+		const digest = sha256(nonce + ts + c.apiKey);
+		const sign = sha256(digest + c.apiSecret);
+		return {
+			url: "wss://fapi.bitunix.com/private/",
+			auth: {
+				op: "login",
+				args: [{ apiKey: c.apiKey, timestamp: ts, nonce, sign }],
+			},
+			ttlSec: 30,
+		} satisfies WsAuth;
 	},
 
 	async ping(c) {

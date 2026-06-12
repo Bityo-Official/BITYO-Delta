@@ -152,6 +152,21 @@ export interface MarkTick {
 	fundRate?: number;
 }
 
+// Private-WS auth credential signed on the SERVER and handed to the browser so it can
+// open the exchange's private account stream directly. The API SECRET never leaves the
+// server — the browser only ever receives a short-lived token (listenKey) or signature.
+export interface WsAuth {
+	/** private WebSocket endpoint */
+	url: string;
+	/** auth message to send right after connect; null when auth is baked into the URL
+	 *  (e.g. Binance listenKey path) */
+	auth: Record<string, unknown> | null;
+	/** listenKey-style venues expose it so the client can schedule keepalive pings */
+	listenKey?: string;
+	/** seconds until the credential expires — client refreshes before this elapses */
+	ttlSec?: number;
+}
+
 export interface AdapterResult<T> {
 	ok: boolean;
 	data: T;
@@ -173,6 +188,12 @@ export interface ExchangeAdapter {
 	 * push real-time mark/uPnL updates for exchanges that aren't on a public WS stream.
 	 */
 	getMarkPrices?(symbols: string[]): Promise<MarkTick[]>;
+	/**
+	 * Sign a PRIVATE-WS credential for the browser (secret stays server-side). Returns
+	 * the endpoint + an auth message / listenKey the client uses to open the account
+	 * stream directly from the user's own IP.
+	 */
+	getWsAuth?(c: Credentials): Promise<WsAuth>;
 }
 
 export function baseOf(symbol: string): string {
