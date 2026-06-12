@@ -54,3 +54,35 @@ export async function cacheSet(
 }
 
 export const cacheBackend = enabled ? "upstash" : "memory";
+
+// Fixed-window rate limiter. Atomic INCR+EXPIRE on Upstash so the count is shared
+// across the serverless fleet; per-process Map fallback in dev. FAILS OPEN (allows
+// the request) if the backend errors — availability over strictness for login.
+export async function rateLimit(
+	key: string,
+	max: number,
+	windowSec: number,
+): Promise<{ ok: boolean; retryAfterSec: number }> {
+	const k = `rl:${key}`;
+	try {
+		if (enabled) {
+			const n = (await cmd(["INCR", k])) as number;
+			if (n === 1) await cmd(["EXPIRE", k, windowSec]);
+			if (n <= max) return { ok: true, retryAfterSec: 0 };
+			const ttl = (await cmd(["TTL", k])) as number;
+			return { ok: false, retryAfterSec: ttl > 0 ? ttl : windowSec };
+		}
+		const now = Date.now();
+		const hit = mem.get(k);
+		if (!hit || hit.exp <= now) {
+			mem.set(k, { exp: now + windowSec * 1000, v: "1" });
+			return { ok: true, retryAfterSec: 0 };
+		}
+		const n = Number(hit.v) + 1;
+		hit.v = String(n);
+		if (n <= max) return { ok: true, retryAfterSec: 0 };
+		return { ok: false, retryAfterSec: Math.ceil((hit.exp - now) / 1000) };
+	} catch {
+		return { ok: true, retryAfterSec: 0 };
+	}
+}
