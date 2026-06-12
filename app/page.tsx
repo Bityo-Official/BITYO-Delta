@@ -1,7 +1,7 @@
 // app/page.tsx — public marketing landing (no auth, no live data). Always dark for a
 // premium "front door" look, independent of the user's dashboard theme.
 import Link from "next/link";
-import { Hero3D } from "@/components/landing/Hero3D";
+import { HeroBackground } from "@/components/landing/HeroBackground";
 import { ExChip } from "@/components/primitives";
 import { getCurrentUser } from "@/lib/auth";
 import { EXCHANGE_META, type ExchangeKey } from "@/lib/exchanges/types";
@@ -144,7 +144,7 @@ export default async function Landing() {
 
 			{/* hero */}
 			<section className="relative flex min-h-screen items-center justify-center overflow-hidden px-6">
-				<Hero3D />
+				<HeroBackground />
 				{/* radial vignette to seat the 3D in the page */}
 				<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_30%,#0A0A0B_78%)]" />
 				<div className="relative z-10 mx-auto max-w-3xl text-center">

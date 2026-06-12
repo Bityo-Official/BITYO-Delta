@@ -31,18 +31,23 @@ const config: Config = {
 				DEFAULT: "rgb(var(--line) / 1)", // bare `border` = hairline
 			},
 			fontFamily: {
+				// Latin from the self-hosted Geist variable; CJK from system fonts
+				// (PingFang TC on Apple, JhengHei on Windows, Noto Sans CJK on Android).
 				sans: [
-					"Geist",
+					"var(--font-geist-sans)",
+					"PingFang TC",
+					"Microsoft JhengHei",
 					"Noto Sans TC",
 					"-apple-system",
 					"system-ui",
 					"sans-serif",
 				],
 				mono: [
-					"Geist Mono",
+					"var(--font-geist-mono)",
 					"IBM Plex Mono",
-					"Noto Sans TC",
 					"ui-monospace",
+					"PingFang TC",
+					"Microsoft JhengHei",
 					"monospace",
 				],
 			},
