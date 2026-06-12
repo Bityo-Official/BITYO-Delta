@@ -9,6 +9,7 @@ import { useData } from "@/components/DataProvider";
 import { TabIcon, type TabIconName } from "@/components/primitives";
 import { computeHedges, computeTotals, exposureByCoin } from "@/lib/derive";
 import type { NormPosition } from "@/lib/exchanges/types";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/theme";
 import { PositionDetailSheet } from "./PositionDetailSheet";
 import type { PageProps } from "./pages";
@@ -96,8 +97,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 	};
 
 	async function logout() {
-		await fetch("/api/auth/logout", { method: "POST" });
+		await createClient().auth.signOut();
 		router.push("/");
+		router.refresh();
 	}
 
 	const isActive = (href: string) =>

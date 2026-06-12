@@ -12,39 +12,14 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id        String            @id @default(cuid())
-  email     String            @unique
-  password  String? // bcrypt hash — null for OAuth-only (Google) accounts
-  name      String?
-  googleId  String?           @unique // Google "sub" — set for Google sign-in
-  image     String? // avatar URL from the OAuth provider
-  createdAt DateTime          @default(now())
-  accounts  ExchangeAccount[]
-  sessions  Session[]
-  // user preferences
-  settleCcy String            @default("USDT")
-  dark      Boolean           @default(false)
-  primary   String            @default("indigo")
-}
-
-model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique // random session id embedded in JWT
-  userAgent String?
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-
-  @@index([userId])
-}
+// Identity is owned by Supabase Auth (auth.users). We keep no User/Session tables of our
+// own; preferences live in the user's Supabase user_metadata. ExchangeAccount.userId holds
+// the Supabase auth UID (uuid as text) — not an FK, since auth.users lives in another schema.
 
 // One connected exchange API key per row. Secret + passphrase are AES-256-GCM encrypted.
 model ExchangeAccount {
   id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String // Supabase auth user id
   exchange     String // 'binance' | 'bybit' | 'okx' | 'bingx' | 'bitget' | 'bitunix' | 'pionex'
   label        String? // optional user label
   apiKey       String // encrypted

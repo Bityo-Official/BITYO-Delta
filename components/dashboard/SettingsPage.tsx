@@ -5,6 +5,7 @@ import React from "react";
 import { useData } from "@/components/DataProvider";
 import { ExChip, MiniTag, ThemeToggle } from "@/components/primitives";
 import { EXCHANGE_META, type ExchangeKey } from "@/lib/exchanges/types";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/theme";
 import { DPageHead, DPanel } from "./parts";
 
@@ -49,19 +50,27 @@ export function SettingsPage({
 		text: string;
 	} | null>(null);
 
-	// third-party (OAuth) account links
+	// third-party (OAuth) identities — managed directly through Supabase Auth
+	const supabase = React.useMemo(() => createClient(), []);
 	const [conn, setConn] = React.useState<{
-		hasPassword: boolean;
-		google: { linked: boolean; email: string | null; image: string | null };
+		identityCount: number;
+		google: { linked: boolean; email: string | null } | null;
 	} | null>(null);
 	const [connMsg, setConnMsg] = React.useState<{
 		kind: "ok" | "err";
 		text: string;
 	} | null>(null);
 	const loadConn = React.useCallback(async () => {
-		const r = await fetch("/api/me/connections");
-		if (r.ok) setConn(await r.json());
-	}, []);
+		const { data } = await supabase.auth.getUserIdentities();
+		const ids = data?.identities ?? [];
+		const g = ids.find((i) => i.provider === "google");
+		setConn({
+			identityCount: ids.length,
+			google: g
+				? { linked: true, email: (g.identity_data?.email as string) ?? null }
+				: { linked: false, email: null },
+		});
+	}, [supabase]);
 	React.useEffect(() => {
 		if (user) loadConn();
 	}, [user, loadConn]);
@@ -75,11 +84,23 @@ export function SettingsPage({
 		if (p.get("linked") || p.get("error"))
 			window.history.replaceState(null, "", window.location.pathname);
 	}, []);
+	async function linkGoogle() {
+		setConnMsg(null);
+		const { error } = await supabase.auth.linkIdentity({
+			provider: "google",
+			options: {
+				redirectTo: `${window.location.origin}/auth/callback?next=/dashboard/settings`,
+			},
+		});
+		if (error) setConnMsg({ kind: "err", text: error.message });
+	}
 	async function unlinkGoogle() {
 		setConnMsg(null);
-		const r = await fetch("/api/me/connections", { method: "DELETE" });
-		const j = await r.json();
-		if (!r.ok) setConnMsg({ kind: "err", text: j.error ?? "解除失敗" });
+		const { data } = await supabase.auth.getUserIdentities();
+		const g = data?.identities?.find((i) => i.provider === "google");
+		if (!g) return;
+		const { error } = await supabase.auth.unlinkIdentity(g);
+		if (error) setConnMsg({ kind: "err", text: error.message });
 		else {
 			setConnMsg({ kind: "ok", text: "已解除 Google 綁定" });
 			await loadConn();
@@ -503,7 +524,7 @@ export function SettingsPage({
 								<span className="font-sans text-sm font-bold text-ink">
 									Google
 								</span>
-								{conn?.google.linked ? (
+								{conn?.google?.linked ? (
 									<MiniTag tone="primary">已綁定</MiniTag>
 								) : (
 									<MiniTag tone="warn">未綁定</MiniTag>
@@ -512,24 +533,24 @@ export function SettingsPage({
 							<div className="mt-[3px] font-mono text-[11px] text-sec">
 								{conn === null
 									? "讀取中…"
-									: conn.google.linked
+									: conn.google?.linked
 										? conn.google.email
 										: "綁定後可用 Google 一鍵登入"}
 							</div>
 						</div>
-						{conn?.google.linked ? (
+						{conn?.google?.linked ? (
 							<button
 								type="button"
 								onClick={unlinkGoogle}
-								disabled={!conn.hasPassword}
+								disabled={conn.identityCount <= 1}
 								title={
-									conn.hasPassword
+									conn.identityCount > 1
 										? "解除 Google 綁定"
-										: "請先設定密碼，才能解除綁定"
+										: "這是唯一的登入方式，請先設定 Email 密碼才能解除"
 								}
 								className={cn(
 									"rounded-[7px] border px-3 py-[7px] font-sans text-xs font-medium",
-									conn.hasPassword
+									conn.identityCount > 1
 										? "cursor-pointer border-down/35 bg-transparent text-down"
 										: "cursor-not-allowed border-line bg-transparent text-ter",
 								)}
@@ -537,12 +558,13 @@ export function SettingsPage({
 								解除綁定
 							</button>
 						) : (
-							<a
-								href="/api/auth/google?link=1"
-								className="cursor-pointer rounded-[7px] border-0 bg-primary px-3.5 py-[7px] font-sans text-xs font-semibold text-white no-underline"
+							<button
+								type="button"
+								onClick={linkGoogle}
+								className="cursor-pointer rounded-[7px] border-0 bg-primary px-3.5 py-[7px] font-sans text-xs font-semibold text-white"
 							>
 								綁定 Google
-							</a>
+							</button>
 						)}
 					</div>
 					{connMsg && (

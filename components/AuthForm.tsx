@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-// AuthForm.tsx — shared login / register form (Tailwind; theme comes from the
-// pre-hydration <html> classes set by the root layout script).
+// AuthForm.tsx — shared login / register form. Auth runs client-side against Supabase
+// (email/password + Google OAuth); theme comes from the pre-hydration <html> classes.
 import React from "react";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/theme";
 
 const INPUT_CLS =
@@ -18,7 +19,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 	const [busy, setBusy] = React.useState(false);
 	const [error, setError] = React.useState<string | null>(null);
 
+	const [notice, setNotice] = React.useState<string | null>(null);
 	const isRegister = mode === "register";
+	const supabase = React.useMemo(() => createClient(), []);
 
 	// surface OAuth callback errors (?error=…) — read from the URL directly to avoid
 	// pulling in useSearchParams (which would force this static page dynamic)
@@ -31,26 +34,48 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 		ev.preventDefault();
 		setBusy(true);
 		setError(null);
+		setNotice(null);
 		try {
-			const r = await fetch(`/api/auth/${mode}`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(
-					isRegister ? { email, password, name } : { email, password },
-				),
-			});
-			const j = await r.json();
-			if (!r.ok) {
-				setError(j.error ?? "發生錯誤");
+			if (isRegister) {
+				const { data, error } = await supabase.auth.signUp({
+					email,
+					password,
+					options: { data: { name: name || null } },
+				});
+				if (error) {
+					setError(error.message);
+				} else if (!data.session) {
+					// email confirmation is enabled on the project → no session yet
+					setNotice("註冊成功，請收信點擊確認連結後再登入");
+				} else {
+					router.push("/dashboard");
+					router.refresh();
+				}
 			} else {
-				router.push("/dashboard");
-				router.refresh();
+				const { error } = await supabase.auth.signInWithPassword({
+					email,
+					password,
+				});
+				if (error) setError("Email 或密碼錯誤");
+				else {
+					router.push("/dashboard");
+					router.refresh();
+				}
 			}
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "網路錯誤");
 		} finally {
 			setBusy(false);
 		}
+	}
+
+	async function googleSignIn() {
+		setError(null);
+		const { error } = await supabase.auth.signInWithOAuth({
+			provider: "google",
+			options: { redirectTo: `${window.location.origin}/auth/callback` },
+		});
+		if (error) setError(error.message);
 	}
 
 	return (
@@ -82,10 +107,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 						{isRegister ? "註冊後即可連接交易所 API Key" : "歡迎回來"}
 					</div>
 
-					{/* Google OAuth — full-page redirect (not fetch) */}
-					<a
-						href="/api/auth/google"
-						className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-line bg-card2 py-3 text-sm font-semibold text-ink no-underline transition-colors hover:bg-sunken"
+					{/* Google OAuth via Supabase — redirects to Google, back through /auth/callback */}
+					<button
+						type="button"
+						onClick={googleSignIn}
+						className="flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-lg border border-line bg-card2 py-3 text-sm font-semibold text-ink transition-colors hover:bg-sunken"
 					>
 						<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
 							<path
@@ -106,7 +132,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 							/>
 						</svg>
 						使用 Google {isRegister ? "註冊" : "登入"}
-					</a>
+					</button>
 
 					<div className="my-5 flex items-center gap-3">
 						<div className="h-px flex-1 bg-line" />
@@ -158,6 +184,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 							/>
 						</div>
 						{error && <div className="text-xs text-down">{error}</div>}
+						{notice && <div className="text-xs text-up">{notice}</div>}
 						<button
 							type="submit"
 							disabled={busy}
